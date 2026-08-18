@@ -6,6 +6,7 @@ versioned proposal so a maintainer can verify candidates in the generated GitHub
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import io
 import json
@@ -23,6 +24,7 @@ from pypdf import PdfReader
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 PROPOSALS = DATA / "proposals"
+RAW = DATA / "raw"
 STATE_FILE = DATA / "source_state.json"
 USER_AGENT = "UniDate/0.1 (+https://github.com; public academic calendar checker)"
 
@@ -54,6 +56,10 @@ def write_json(path: Path, value) -> None:
 
 
 def discover_document(source: dict, response: httpx.Response, client: httpx.Client) -> tuple[str, bytes, str]:
+    if source.get("document_url"):
+        document = client.get(source["document_url"])
+        document.raise_for_status()
+        return str(document.url), document.content, document.headers.get("content-type", "")
     content_type = response.headers.get("content-type", "")
     if source["parser"] != "linked_pdf" or "html" not in content_type:
         return str(response.url), response.content, content_type
@@ -71,6 +77,45 @@ def discover_document(source: dict, response: httpx.Response, client: httpx.Clie
     document = client.get(links[0])
     document.raise_for_status()
     return str(document.url), document.content, document.headers.get("content-type", "")
+
+
+def save_raw_source(
+    source: dict,
+    *,
+    final_url: str,
+    content: bytes,
+    content_type: str,
+    digest: str,
+    downloaded_at: datetime,
+) -> Path:
+    if content.startswith(b"%PDF") or "pdf" in content_type or final_url.casefold().endswith(".pdf"):
+        extension = ".pdf"
+    elif "html" in content_type:
+        extension = ".html"
+    else:
+        extension = ".bin"
+    session = source["academic_session"].replace("/", "-")
+    directory = RAW / source["university_code"] / session
+    directory.mkdir(parents=True, exist_ok=True)
+    document_path = directory / f"{source['id']}{extension}"
+    document_path.write_bytes(content)
+    write_json(
+        directory / f"{source['id']}.metadata.json",
+        {
+            "source_id": source["id"],
+            "university_code": source["university_code"],
+            "academic_session": source["academic_session"],
+            "title": source["title"],
+            "registry_url": source["url"],
+            "resolved_url": final_url,
+            "content_type": content_type,
+            "content_hash": digest,
+            "downloaded_at": downloaded_at.isoformat(),
+            "filename": document_path.name,
+            "bytes": len(content),
+        },
+    )
+    return document_path
 
 
 def extract_text(content: bytes, content_type: str, url: str) -> tuple[str, list[dict]]:
@@ -144,7 +189,22 @@ def extract_candidates(pages: list[dict], session: str) -> list[dict]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--download-only",
+        action="store_true",
+        help="Save current source files without creating proposals or changing source state.",
+    )
+    parser.add_argument(
+        "--university",
+        action="append",
+        help="Only process this university code; repeat to select multiple universities.",
+    )
+    args = parser.parse_args()
     sources = read_json(DATA / "sources.json", [])
+    if args.university:
+        selected = {code.casefold() for code in args.university}
+        sources = [source for source in sources if source["university_code"].casefold() in selected]
     state = read_json(STATE_FILE, {})
     changed = 0
     failures = []
@@ -158,6 +218,17 @@ def main() -> int:
                 response.raise_for_status()
                 final_url, content, content_type = discover_document(source, response, client)
                 digest = hashlib.sha256(content).hexdigest()
+                raw_path = save_raw_source(
+                    source,
+                    final_url=final_url,
+                    content=content,
+                    content_type=content_type,
+                    digest=digest,
+                    downloaded_at=now,
+                )
+                print(f"saved {source['id']}: {raw_path.relative_to(ROOT)}")
+                if args.download_only:
+                    continue
                 previous = state.get(source["id"], {}).get("content_hash")
                 if previous == digest:
                     print(f"unchanged {source['id']}")
@@ -190,7 +261,8 @@ def main() -> int:
                 failures.append(f"{source['id']}: {error}")
                 print(f"failed {source['id']}: {error}", file=sys.stderr)
 
-    write_json(STATE_FILE, state)
+    if not args.download_only:
+        write_json(STATE_FILE, state)
     print(f"complete: {changed} changed, {len(failures)} failed")
     return 1 if failures and len(failures) == len(sources) else 0
 

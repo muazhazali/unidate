@@ -44,6 +44,13 @@ You can also run both production containers with `docker compose up --build`.
 
 The monthly GitHub workflow checks registered public calendar sources and opens a pull request when content changes. Candidate dates remain unpublished until a maintainer verifies the source and updates `backend/data/events.json` in the pull request.
 
+Downloaded source files are retained locally under `backend/data/raw/<university>/<academic-session>/` with a metadata JSON file containing the URL and SHA-256 hash. To download sources without creating proposals:
+
+```bash
+cd backend
+uv run python scripts/sync_calendars.py --download-only
+```
+
 See [PRD.md](./PRD.md) for the full product requirements.
 
 ## Status
