@@ -1,0 +1,45 @@
+name: Monthly calendar source check
+
+on:
+  schedule:
+    - cron: "17 2 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-sources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - working-directory: backend
+        run: uv sync --frozen --no-dev
+      - working-directory: backend
+        run: uv run --no-dev python scripts/sync_calendars.py
+      - name: Open review pull request when sources changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: calendar-sync-${{ github.run_id }}
+        shell: bash
+        run: |
+          if git diff --quiet -- backend/data/source_state.json backend/data/proposals; then
+            echo "No source changes detected."
+            exit 0
+          fi
+          git config user.name "unidate-bot"
+          git config user.email "unidate-bot@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add backend/data/source_state.json backend/data/proposals
+          git commit -m "data: propose monthly calendar updates"
+          git push --set-upstream origin "$BRANCH"
+          gh pr create \
+            --title "data: review monthly calendar updates" \
+            --body "Automated source check detected new or changed public calendar content. Review every candidate against its linked source, update approved events.json, and merge only after verification." \
+            --base main \
+            --head "$BRANCH"
+
