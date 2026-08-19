@@ -2,6 +2,7 @@
   "name": "unidate-frontend",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.19.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -22,4 +23,3 @@
     "typescript": "5.9.3"
   }
 }
-

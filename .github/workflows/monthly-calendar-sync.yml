@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "17 2 1 * *"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Extract sources but do not call Ollama or open a PR
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -20,8 +25,17 @@ jobs:
       - working-directory: backend
         run: uv sync --frozen --no-dev
       - working-directory: backend
-        run: uv run --no-dev python scripts/sync_calendars.py
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            uv run --no-dev python scripts/sync_calendars.py --extract-only
+          else
+            uv run --no-dev python scripts/sync_calendars.py
+          fi
       - name: Open review pull request when sources changed
+        if: ${{ inputs.dry_run != true }}
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: calendar-sync-${{ github.run_id }}
@@ -37,9 +51,9 @@ jobs:
           git add backend/data/source_state.json backend/data/proposals
           git commit -m "data: propose monthly calendar updates"
           git push --set-upstream origin "$BRANCH"
-          gh pr create \
+          PR_URL=$(gh pr create \
             --title "data: review monthly calendar updates" \
-            --body "Automated source check detected new or changed public calendar content. Review every candidate against its linked source, update approved events.json, and merge only after verification." \
+            --body "Docling and Ollama Cloud detected complete, Pydantic-validated event proposals. Review every proposal against its source before updating approved events.json." \
             --base main \
-            --head "$BRANCH"
-
+            --head "$BRANCH")
+          echo "Created $PR_URL"

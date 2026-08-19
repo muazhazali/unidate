@@ -32,8 +32,8 @@ In another terminal:
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open `http://localhost:3000`. API documentation is available at `http://localhost:8000/docs`.
@@ -42,7 +42,29 @@ You can also run both production containers with `docker compose up --build`.
 
 ## Data updates
 
-The monthly GitHub workflow checks registered public calendar sources and opens a pull request when content changes. Candidate dates remain unpublished until a maintainer verifies the source and updates `backend/data/events.json` in the pull request.
+The monthly GitHub workflow downloads registered public sources, uses Docling for PDFs, and sends the structured result to Ollama Cloud. Pydantic-valid complete event proposals are committed to a pull request; they remain unpublished until a maintainer checks them against the linked source and updates `backend/data/events.json`.
+
+```mermaid
+flowchart TD
+    A[Monthly source check] --> B[Download university calendar]
+    B --> C{Source format}
+    C -->|PDF| D[Extract with Docling]
+    C -->|Web page| E[Extract relevant HTML tables]
+    D --> F[Normalize events with Ollama Cloud]
+    E --> F
+    F --> G{Pydantic validation}
+    G -->|Invalid| H[Retry with validation errors]
+    H --> F
+    G -->|Valid| I[Generate event proposal]
+    I --> J[Open GitHub pull request]
+    J --> K{Human source review}
+    K -->|Approved| L[Update published events]
+    K -->|Changes needed| M[Correct or reject proposal]
+```
+
+In short, automation prepares proposals but never publishes extracted events directly. A maintainer must compare each proposal with its linked university source before it becomes part of the public calendar.
+
+Configure the `OLLAMA_API_KEY` repository secret and the `OLLAMA_MODEL` repository variable before enabling the live workflow. Ollama output is retried up to three times when it is invalid JSON or fails schema/date validation.
 
 Downloaded source files are retained locally under `backend/data/raw/<university>/<academic-session>/` with a metadata JSON file containing the URL and SHA-256 hash. To download sources without creating proposals:
 
@@ -50,6 +72,14 @@ Downloaded source files are retained locally under `backend/data/raw/<university
 cd backend
 uv run python scripts/sync_calendars.py --download-only
 ```
+
+To verify extraction without spending Ollama credits or opening a pull request:
+
+```bash
+uv run python scripts/sync_calendars.py --extract-only
+```
+
+Raw and structured files are stored by university and session under `backend/data/raw/` (gitignored). UUM 2026/2027 is collected directly from its HEA HTML tables; PDFs use Docling only. The older pypdf dependency is retained only in the optional benchmark script, not in the collector.
 
 See [PRD.md](./PRD.md) for the full product requirements.
 
