@@ -4,15 +4,18 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { API_URL, CalendarEvent, EventPage, fetchJson, University } from "@/lib/api";
 import { Brand } from "./brand";
+import { EventPopover } from "./event-popover";
 
 type Language = "ms" | "en";
 type ViewMode = "month" | "list";
 
 const copy = {
   ms: {
-    eyebrow: "Kalendar akademik Malaysia",
-    titleA: "Lima universiti.", titleB: "Satu pandangan.",
-    intro: "Bandingkan jadual kampus kawan-kawan dan rancang masa bersama dengan lebih mudah.",
+    eyebrow: "Kalendar universiti berpusat",
+    titleA: "Universiti berbeza.", titleB: "Satu jadual.",
+    intro: "Bandingkan kalendar akademik dan cari masa terbaik untuk bersama rakan atau keluarga.",
+    explore: "Teroka kalendar", browseUniversities: "Lihat universiti",
+    heroPoints: ["Sumber rasmi", "Mudah dibandingkan", "Dikemas kini berkala"],
     search: "Cari acara…", filters: "Tapis", session: "Sesi", type: "Jenis acara",
     allTypes: "Semua jenis", selected: "Universiti dipilih", month: "Bulan", list: "Senarai",
     download: "Muat turun .ICS", today: "Hari ini", events: "acara", source: "Sumber",
@@ -21,9 +24,11 @@ const copy = {
     universities: "Universiti", viewUniversity: "Lihat kalendar", footer: "Data disemak manusia sebelum diterbitkan.",
   },
   en: {
-    eyebrow: "Malaysian academic calendars",
-    titleA: "Five universities.", titleB: "One clear view.",
-    intro: "Compare your friends’ campus schedules and make time together easier to plan.",
+    eyebrow: "Centralized university calendars",
+    titleA: "Different universities.", titleB: "One calendar.",
+    intro: "Compare academic calendars and find the best time to be with friends or family.",
+    explore: "Explore calendars", browseUniversities: "View universities",
+    heroPoints: ["Official sources", "Easy comparison", "Regularly updated"],
     search: "Search events…", filters: "Filters", session: "Session", type: "Event type",
     allTypes: "All types", selected: "Selected universities", month: "Month", list: "List",
     download: "Download .ICS", today: "Today", events: "events", source: "Source",
@@ -138,10 +143,17 @@ export function CalendarApp() {
           <p className="eyebrow"><span />{t.eyebrow}</p>
           <h1>{t.titleA}<br /><em>{t.titleB}</em></h1>
         </div>
-        <p className="hero-copy">{t.intro}</p>
+        <div className="hero-content">
+          <p className="hero-copy">{t.intro}</p>
+          <div className="hero-actions">
+            <a className="hero-primary" href="#calendar">{t.explore}</a>
+            <a className="hero-secondary" href="#universities">{t.browseUniversities} →</a>
+          </div>
+          <ul className="hero-points">{t.heroPoints.map((point) => <li key={point}>{point}</li>)}</ul>
+        </div>
       </section>
 
-      <section className="workspace" aria-label={t.filters}>
+      <section className="workspace" id="calendar" aria-label={t.filters}>
         <div className="filters-panel">
           <div className="filter-heading"><span>{t.filters}</span><b>{events.length} {t.events}</b></div>
           <label className="search-field"><span aria-hidden="true">⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.search} /></label>
@@ -167,13 +179,13 @@ export function CalendarApp() {
             const dayEvents = visibleEvents.filter((event) => event.start_date <= iso && (event.end_date ?? event.start_date) >= iso);
             const isCurrentMonth = day.getMonth() === month.getMonth();
             const isToday = iso === isoDate(new Date());
-            return <div className={`day-cell ${isCurrentMonth ? "" : "muted"}`} key={iso}><time className={isToday ? "today" : ""}>{day.getDate()}</time><div className="day-events">{dayEvents.slice(0, 3).map((event) => { const university = universityMap[event.university_code]; return <a href={event.source_url} target="_blank" rel="noreferrer" className="calendar-event" style={{ "--uni": university?.color ?? "#777" } as React.CSSProperties} key={event.id}><span>{university?.short_name}</span>{event.title}</a>; })}{dayEvents.length > 3 && <small>+{dayEvents.length - 3}</small>}</div></div>;
+            return <div className={`day-cell ${isCurrentMonth ? "" : "muted"}`} key={iso}><time className={isToday ? "today" : ""}>{day.getDate()}</time><div className="day-events">{dayEvents.slice(0, 3).map((event) => { const university = universityMap[event.university_code]; return <EventPopover event={event} university={university} language={language} typeLabel={typeLabels[language][event.event_type] ?? event.event_type} key={event.id} />; })}{dayEvents.length > 3 && <small>+{dayEvents.length - 3}</small>}</div></div>;
           })}</div>}
           {status === "ready" && view === "list" && <div className="event-list">{visibleEvents.length === 0 ? <div className="state-message">{t.empty}</div> : visibleEvents.map((event) => { const university = universityMap[event.university_code]; return <article key={event.id} style={{ "--uni": university?.color ?? "#777" } as React.CSSProperties}><div className="event-date">{dateRange(event, language)}</div><div><div className="event-meta"><span>{university?.short_name}</span><span>{typeLabels[language][event.event_type] ?? event.event_type}</span></div><h3>{event.title}</h3><p>{event.semester}{event.audience ? ` · ${event.audience}` : ""}</p></div><a href={event.source_url} target="_blank" rel="noreferrer">{t.source} ↗</a></article>; })}</div>}
         </div>
       </section>
 
-      <section className="university-directory">
+      <section className="university-directory" id="universities">
         <div className="section-heading"><p className="eyebrow"><span />{t.universities}</p><h2>{universities.length.toString().padStart(2, "0")}</h2></div>
         <div className="university-cards">{universities.map((university, index) => <Link href={`/universities/${university.code}`} key={university.code} style={{ "--uni": university.color } as React.CSSProperties}><small>0{index + 1}</small><span className="card-dot" /><h3>{university.short_name}</h3><p>{university.name}</p><b>{t.viewUniversity} →</b></Link>)}</div>
       </section>
