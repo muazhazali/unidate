@@ -4,5 +4,35 @@
     "checked_at": "2026-08-19T02:45:54.135182+00:00",
     "resolved_url": "http://hea.uum.edu.my/index.php/academic-calendar-ug",
     "status": "ok"
+  },
+  "uitm-main-2026": {
+    "content_hash": "cc172121910a21b0e5d3ce91e33f962b84121222b348e7238bee82e5f5811d9c",
+    "checked_at": "2026-08-19T03:55:58.467682+00:00",
+    "resolved_url": "https://drive.usercontent.google.com/download?id=10avU_sT_S98Q2caQFN9hqgCezfwcLzXS&export=download",
+    "status": "ok"
+  },
+  "unimap-calendar-2026": {
+    "content_hash": "91a21723b9bcbe4182a3552d0e482705a74e2e885eba040cdb172b5d126bd29c",
+    "checked_at": "2026-08-19T03:55:58.467682+00:00",
+    "resolved_url": "https://www.unimap.edu.my/images/calendar/KALENDAR_AKADEMIK-DIPLOMA_UniMAP-2026_2027_30012026.pdf",
+    "status": "ok"
+  },
+  "unimap-bachelor-2026": {
+    "content_hash": "193fa0d92ffc7cf519b5f92e8908bc1403d0654e39fa299f0c1b8c5606257f98",
+    "checked_at": "2026-08-19T03:55:58.467682+00:00",
+    "resolved_url": "https://www.unimap.edu.my/images/calendar/KALENDAR-AKADEMIK-SARJANA%20MUDA_20262027.pdf",
+    "status": "ok"
+  },
+  "um-bachelor-2026": {
+    "content_hash": "fa3f8f72da2147ac3abaee72d97820607d10f1efd85442418598f7462d1381fa",
+    "checked_at": "2026-08-19T03:55:58.467682+00:00",
+    "resolved_url": "https://aasd.um.edu.my/website_doc/academic-calendar/2026/Attachment%20J%20Academic%20Calendar%20Bachelor%20Degree%202026-2027%20Academic%20Session.pdf",
+    "status": "ok"
+  },
+  "ukm-main-2026": {
+    "content_hash": "8eceb4cfea7907e746dee5bea01f3d27f61f67583cc819e02a10fbf9a6dcb9bb",
+    "checked_at": "2026-08-19T03:55:58.467682+00:00",
+    "resolved_url": "https://www.ukm.my/akademik/wp-content/uploads/2026/07/PEKELILING-AKADEMIK-BIL.-21.pdf",
+    "status": "ok"
   }
 }

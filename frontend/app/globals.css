@@ -76,3 +76,43 @@ footer { min-height: 120px; padding: 30px clamp(20px, 5vw, 76px); display: flex;
 
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--lime); outline-offset: 3px; }
+
+/* Calendar interaction and accessibility refinements */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.filter-heading > div { display: flex; align-items: center; gap: 8px; }
+.filter-toggle { display: none; }
+.filter-controls { display: contents; }
+.filters-panel legend { width: 100%; }
+.filters-panel legend > span:first-child { float: left; }
+.selection-actions { float: right; display: flex; gap: 10px; }
+.selection-actions button, .reset-filters, .more-events { border: 0; padding: 0; background: transparent; color: var(--green); font-size: 10px; font-weight: 800; cursor: pointer; }
+.university-options { clear: both; }
+.university-options label:has(input:focus-visible) { outline: 3px solid var(--lime); outline-offset: 2px; }
+.university-options input { width: 1px; height: 1px; }
+.reset-filters { align-self: flex-start; text-decoration: underline; text-underline-offset: 3px; }
+.download-button:disabled { border: 0; opacity: .45; cursor: not-allowed; }
+.calendar-event { min-height: 24px; font-size: 10px; }
+.more-events { min-height: 24px; text-align: right; }
+.calendar-empty { margin: 18px; padding: 14px; border-radius: 9px; background: #f8f9f5; text-align: center; color: var(--muted); font-size: 12px; }
+.state-message p { margin: 0 0 14px; }
+.state-message button { border: 0; border-radius: 8px; padding: 10px 14px; background: var(--ink); color: var(--white); font-weight: 800; cursor: pointer; }
+.day-dialog-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 20px; background: #17211b80; }
+.day-dialog { width: min(760px, 100%); max-height: min(720px, calc(100vh - 40px)); overflow: auto; border-radius: 16px; background: var(--white); box-shadow: 0 24px 80px #0004; }
+.day-dialog-heading { position: sticky; z-index: 1; top: 0; display: flex; justify-content: space-between; gap: 20px; padding: 22px 24px; border-bottom: 1px solid var(--line); background: var(--white); }
+.day-dialog-heading small { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.day-dialog-heading h2 { margin: 5px 0 0; font-size: 22px; text-transform: capitalize; }
+.day-dialog-heading button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: #eff1ec; color: var(--ink); font-size: 24px; cursor: pointer; }
+
+@media (max-width: 640px) {
+  .filters-panel { display: block; padding: 0; }
+  .filter-heading { min-height: 64px; padding: 14px 16px; }
+  .filter-heading b { display: none; }
+  .filter-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; background: var(--white); color: var(--ink); font-size: 11px; font-weight: 800; cursor: pointer; }
+  .filter-controls { display: none; }
+  .filters-panel.open .filter-controls { display: flex; flex-direction: column; gap: 18px; padding: 0 16px 18px; }
+  .calendar-toolbar { position: sticky; z-index: 5; top: 0; background: var(--white); }
+  .calendar-event { max-width: none; }
+  .day-dialog-backdrop { place-items: end center; padding: 0; }
+  .day-dialog { width: 100%; max-height: 88vh; border-radius: 18px 18px 0 0; }
+  .day-dialog .event-list { padding-inline: 18px; }
+}
