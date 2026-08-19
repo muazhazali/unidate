@@ -53,6 +53,7 @@ class Source(BaseModel):
     academic_session: str
     title: str
     url: HttpUrl
+    document_url: HttpUrl | None = None
     format: str
     parser: str
     audience: str | None = None
@@ -66,4 +67,3 @@ class EventPage(BaseModel):
     page: int
     page_size: int
     has_next: bool
-

@@ -24,7 +24,10 @@ def write_json(path: Path, value) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
 
 def discover_document(source: dict, response: httpx.Response, client: httpx.Client) -> tuple[str, bytes, str]:
-    if source.get("document_url"):
+    # A document_url may be retained purely as provenance for an HTML-first
+    # source. Only resolve it when the source is explicitly configured for PDF
+    # extraction; otherwise the registry page remains the parsed document.
+    if source.get("document_url") and source.get("format") == "pdf":
         document = client.get(source["document_url"]); document.raise_for_status()
         return str(document.url), document.content, document.headers.get("content-type", "")
     content_type = response.headers.get("content-type", "")

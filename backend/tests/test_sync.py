@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 from app.extraction_models import NormalizedEventBatch
 from app.ollama_cloud import OllamaCloudClient
-from scripts.sync_calendars import build_proposal, extract_html
+from scripts.sync_calendars import build_proposal, discover_document, extract_html
 
 SOURCE = {"id": "uum-undergraduate-2026", "university_code": "uum", "academic_session": "2026/2027", "audience": "Undergraduate students", "title": "Calendar"}
 
@@ -46,3 +46,27 @@ def test_html_scopes_uum_page_to_requested_session():
     document = extract_html(html, "https://example.test", "2026/2027")
     text = json.dumps(document)
     assert "Current event" in text and "Old event" not in text
+
+def test_html_primary_source_does_not_fetch_reference_pdf():
+    source = {
+        **SOURCE,
+        "url": "https://example.test/calendar",
+        "document_url": "https://example.test/calendar.pdf",
+        "format": "html",
+        "parser": "html",
+    }
+    response = httpx.Response(
+        200,
+        content=b"<main>Web calendar</main>",
+        headers={"content-type": "text/html"},
+        request=httpx.Request("GET", source["url"]),
+    )
+
+    class NoPdfClient:
+        def get(self, _):
+            raise AssertionError("reference PDF must not be fetched")
+
+    final_url, content, content_type = discover_document(source, response, NoPdfClient())
+    assert final_url == source["url"]
+    assert content == b"<main>Web calendar</main>"
+    assert content_type == "text/html"
