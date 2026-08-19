@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 from app.extraction_models import NormalizedEventBatch
 from app.ollama_cloud import OllamaCloudClient
-from scripts.sync_calendars import build_proposal, discover_document, extract_html
+from scripts.sync_calendars import DATA, build_proposal, discover_document, discover_uitm_sections, extract_html, read_json
 
 SOURCE = {"id": "uum-undergraduate-2026", "university_code": "uum", "academic_session": "2026/2027", "audience": "Undergraduate students", "title": "Calendar"}
 
@@ -70,3 +70,42 @@ def test_html_primary_source_does_not_fetch_reference_pdf():
     assert final_url == source["url"]
     assert content == b"<main>Web calendar</main>"
     assert content_type == "text/html"
+
+def test_html_scopes_uitm_page_to_exact_calendar_panel():
+    html = b'''<main>
+      <div class="sppb-panel"><span class="sppb-panel-title">GROUP A: SEMESTER MARCH 20272</span><p>Group A event</p></div>
+      <div class="sppb-panel"><span class="sppb-panel-title">GROUP B: SEMESTER MARCH 20262</span><p>Old Group B event</p></div>
+      <div class="sppb-panel"><span class="sppb-panel-title">GROUP B: SEMESTER MARCH 20272</span><p>Target Group B event</p><a href="calendar.pdf">PDF</a></div>
+    </main>'''
+    document = extract_html(html, "https://example.test/calendars", section_match=["GROUP B:", "MARCH", "20272"])
+    text = json.dumps(document)
+    assert "Target Group B event" in text
+    assert "Group A event" not in text
+    assert "Old Group B event" not in text
+    assert "https://example.test/calendar.pdf" in text
+
+def test_html_fails_closed_when_uitm_section_is_missing():
+    html = b'<main><div class="sppb-panel"><span class="sppb-panel-title">GROUP A</span></div></main>'
+    with pytest.raises(ValueError, match="calendar section not found"):
+        extract_html(html, "https://example.test", section_match=["GROUP B", "20272"])
+
+def test_uitm_uses_one_automatic_catalog_source():
+    sources = [source for source in read_json(DATA / "sources.json", [])
+               if source["university_code"] == "uitm"]
+    assert len(sources) == 1
+    assert sources[0]["parser"] == "uitm_sections"
+    assert sources[0]["minimum_academic_session"] == "2026/2027"
+
+def test_uitm_discovers_new_semester_automatically():
+    html = b'''<main>
+      <div class="sppb-panel"><span class="sppb-panel-title">SUMMARY SCHEDULE FOR SESSION 2026/2027: GROUP B</span><a href="summary.pdf">PDF</a></div>
+      <div class="sppb-panel"><span class="sppb-panel-title">GROUP B: PROGRAMMES SEMESTER MARCH - JULY 2027 (20272)</span><a href="old.pdf">PDF</a></div>
+      <div class="sppb-panel"><span class="sppb-panel-title">GROUP B: PROGRAMMES SEMESTER SEPTEMBER 2027 - FEBRUARY 2028 (20274)</span><a href="new.pdf">PDF</a></div>
+    </main>'''
+    catalog = {"minimum_academic_session": "2026/2027", "last_checked": "2026-08-19"}
+    sources = discover_uitm_sections(html, "https://example.test/calendars", catalog)
+    by_id = {source["id"]: source for source in sources}
+    assert set(by_id) == {"uitm-group-b-summary-2026", "uitm-group-b-20272", "uitm-group-b-20274"}
+    assert by_id["uitm-group-b-20274"]["academic_session"] == "2027/2028"
+    assert by_id["uitm-group-b-20274"]["document_url"] == "https://example.test/new.pdf"
+    assert by_id["uitm-group-b-20274"]["parser"] == "html"

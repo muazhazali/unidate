@@ -54,6 +54,8 @@ class Source(BaseModel):
     title: str
     url: HttpUrl
     document_url: HttpUrl | None = None
+    section_match: list[str] | None = None
+    minimum_academic_session: str | None = None
     format: str
     parser: str
     audience: str | None = None

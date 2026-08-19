@@ -1,7 +1,7 @@
 """Download calendars, extract with Docling, and create validated review proposals."""
 from __future__ import annotations
 
-import argparse, hashlib, json, sys
+import argparse, hashlib, json, re, sys
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urljoin
@@ -15,6 +15,9 @@ from app.ollama_cloud import OllamaCloudClient
 DATA, PROPOSALS, RAW = ROOT / "data", ROOT / "data/proposals", ROOT / "data/raw"
 STATE_FILE = DATA / "source_state.json"
 USER_AGENT = "UniDate/0.2 (+https://github.com/muazhazali/unidate)"
+
+UITM_GROUP_A_AUDIENCE = "Foundation and Professional"
+UITM_GROUP_B_AUDIENCE = "Pre-Diploma, Diploma, Bachelor, Master and Doctoral"
 
 def read_json(path: Path, default):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
@@ -41,6 +44,59 @@ def discover_document(source: dict, response: httpx.Response, client: httpx.Clie
     document = client.get(links[0]); document.raise_for_status()
     return str(document.url), document.content, document.headers.get("content-type", "")
 
+def _uitm_session_from_semester_code(code: str) -> str | None:
+    year, term = int(code[:4]), code[-1]
+    if term == "4":
+        return f"{year}/{year + 1}"
+    if term == "2":
+        return f"{year - 1}/{year}"
+    return None
+
+def discover_uitm_sections(content: bytes, url: str, catalog: dict) -> list[dict]:
+    """Discover UiTM calendar accordion panels without downloading their PDFs."""
+    soup = BeautifulSoup(content, "html.parser")
+    minimum_year = int(catalog.get("minimum_academic_session", "0000/0000").split("/", 1)[0])
+    discovered: dict[str, dict] = {}
+    for panel in soup.select("div.sppb-panel"):
+        title_element = panel.select_one(".sppb-panel-title")
+        if not title_element:
+            continue
+        heading = " ".join(title_element.stripped_strings)
+        summary = re.search(r"SUMMARY SCHEDULE FOR SESSION\s+(\d{4}/\d{4}).*?GROUP\s+([AB])", heading, re.I)
+        detail = re.search(r"^GROUP\s+([AB])\s*:.*?\((20\d{3})\)\s*$", heading, re.I)
+        if summary:
+            session, group = summary.group(1), summary.group(2).lower()
+            source_id = f"uitm-group-{group}-summary-{session[:4]}"
+            section_match = ["SUMMARY SCHEDULE FOR SESSION", session, f"GROUP {group.upper()}"]
+            title = f"Summary Schedule {session} — Group {group.upper()}"
+        elif detail:
+            group, semester_code = detail.group(1).lower(), detail.group(2)
+            session = _uitm_session_from_semester_code(semester_code)
+            if not session:
+                continue
+            source_id = f"uitm-group-{group}-{semester_code}"
+            section_match = [f"GROUP {group.upper()}:", semester_code]
+            title = f"Academic Calendar Group {group.upper()} — Semester {semester_code}"
+        else:
+            continue
+        if int(session[:4]) < minimum_year:
+            continue
+        pdf = panel.select_one('a[href*="drive.google.com"]') or panel.select_one("a[href]")
+        discovered[source_id] = {
+            "id": source_id,
+            "university_code": "uitm",
+            "academic_session": session,
+            "title": title,
+            "url": url,
+            "document_url": urljoin(url, pdf["href"]) if pdf else None,
+            "section_match": section_match,
+            "format": "html",
+            "parser": "html",
+            "audience": UITM_GROUP_A_AUDIENCE if group == "a" else UITM_GROUP_B_AUDIENCE,
+            "last_checked": catalog.get("last_checked"),
+        }
+    return sorted(discovered.values(), key=lambda source: source["id"])
+
 def save_raw_source(source: dict, *, final_url: str, content: bytes, content_type: str, digest: str, downloaded_at: datetime) -> Path:
     extension = ".pdf" if content.startswith(b"%PDF") or "pdf" in content_type or final_url.casefold().endswith(".pdf") else ".html"
     directory = RAW / source["university_code"] / source["academic_session"].replace("/", "-")
@@ -63,11 +119,26 @@ def extract_pdf_with_docling(path: Path) -> dict:
             pages.setdefault(page, []).append({k: item[k] for k in ("label", "text", "data") if k in item})
     return {"extractor": "docling", "pages": [{"page": page, "items": items} for page, items in sorted(pages.items())]}
 
-def extract_html(content: bytes, url: str, academic_session: str | None = None) -> dict:
+def extract_html(
+    content: bytes,
+    url: str,
+    academic_session: str | None = None,
+    section_match: list[str] | None = None,
+) -> dict:
     soup = BeautifulSoup(content, "html.parser")
     for unwanted in soup(["script", "style", "noscript", "svg"]): unwanted.decompose()
     main = soup.select_one("main, article, .item-page, #content") or soup.body or soup
-    if academic_session:
+    if section_match:
+        tokens = [token.casefold() for token in section_match]
+        panels = main.select("div.sppb-panel")
+        panel = next((candidate for candidate in panels
+                      if all(token in " ".join(candidate.select_one(".sppb-panel-title").stripped_strings).casefold()
+                             for token in tokens)
+                      if candidate.select_one(".sppb-panel-title")), None)
+        if panel is None:
+            raise ValueError(f"calendar section not found: {section_match}")
+        main = panel
+    elif academic_session:
         heading = main.find(attrs={"aria-label": lambda value: value and academic_session in value})
         panel = heading.find_parent("div", class_=lambda value: value and "sppb-panel" in value) if heading else None
         if panel:
@@ -102,20 +173,36 @@ def run(*, universities=None, download_only=False, extract_only=False, force=Fal
     changed, failures, now = 0, [], datetime.now(UTC); PROPOSALS.mkdir(parents=True, exist_ok=True)
     own_client = client is None
     client = client or httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=60)
+    responses: dict[str, httpx.Response] = {}
     try:
-        for source in sources:
+        queue = list(sources)
+        while queue:
+            source = queue.pop(0)
             try:
-                response = client.get(source["url"]); response.raise_for_status()
+                if source["url"] not in responses:
+                    responses[source["url"]] = client.get(source["url"])
+                    responses[source["url"]].raise_for_status()
+                response = responses[source["url"]]
+                if source.get("parser") == "uitm_sections":
+                    discovered = discover_uitm_sections(response.content, str(response.url), source)
+                    if not discovered:
+                        raise ValueError("no UiTM calendar sections discovered")
+                    queue[0:0] = discovered
+                    print(f"discovered {len(discovered)} UiTM calendar sections")
+                    continue
                 final_url, content, content_type = discover_document(source, response, client)
-                digest = hashlib.sha256(content).hexdigest()
-                raw_path = save_raw_source(source, final_url=final_url, content=content, content_type=content_type, digest=digest, downloaded_at=now)
+                raw_digest = hashlib.sha256(content).hexdigest()
+                raw_path = save_raw_source(source, final_url=final_url, content=content, content_type=content_type, digest=raw_digest, downloaded_at=now)
                 print(f"saved {source['id']}: {raw_path.relative_to(ROOT)}")
                 if download_only: continue
-                previous = state.get(source["id"], {}).get("content_hash")
-                if previous == digest and not force: print(f"unchanged {source['id']}"); continue
-                document = extract_pdf_with_docling(raw_path) if raw_path.suffix == ".pdf" else extract_html(content, final_url, source["academic_session"])
+                document = (extract_pdf_with_docling(raw_path) if raw_path.suffix == ".pdf" else
+                            extract_html(content, final_url, source["academic_session"], source.get("section_match")))
+                digest = (raw_digest if raw_path.suffix == ".pdf" else
+                          hashlib.sha256(json.dumps(document, ensure_ascii=False, sort_keys=True).encode()).hexdigest())
                 extracted_path = raw_path.with_suffix(".docling.json" if raw_path.suffix == ".pdf" else ".html.json"); write_json(extracted_path, document)
                 if extract_only: print(f"extracted {source['id']}: {extracted_path.relative_to(ROOT)}"); continue
+                previous = state.get(source["id"], {}).get("content_hash")
+                if previous == digest and not force: print(f"unchanged {source['id']}"); continue
                 active_normalizer = normalizer or OllamaCloudClient()
                 proposal = build_proposal(source, final_url=final_url, digest=digest, previous=previous, detected_at=now, document=document, normalizer=active_normalizer)
                 write_json(PROPOSALS / f"{now.date().isoformat()}-{source['id']}.json", proposal)
